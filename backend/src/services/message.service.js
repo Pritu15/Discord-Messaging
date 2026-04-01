@@ -9,3 +9,13 @@ exports.listMessages = async ({ serverId, channelId, before, after, limit }) => 
     limit,
   });
 };
+
+exports.updateMessage = async ({ channelId, messageId, content, deleteAttachmentIds, hasContent }) => {
+  return messageModel.updateMessage({
+    channelId,
+    messageId,
+    content,
+    deleteAttachmentIds,
+    hasContent,
+  });
+};
