@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 
 const authModel = require('../models/auth.model');
@@ -10,6 +11,51 @@ const createHttpError = (statusCode, message) => {
   const error = new Error(message);
   error.statusCode = statusCode;
   return error;
+};
+
+const createAuthPayload = (user) => ({
+  id: user.id,
+  email: user.email,
+  username: user.username,
+  displayName: user.display_name,
+  dateOfBirth: user.date_of_birth,
+  createdAt: user.created_at,
+});
+
+const signAccessToken = (user) => {
+  const tokenId = crypto.randomUUID();
+
+  const token = jwt.sign(
+    {
+      sub: user.id,
+      email: user.email,
+      username: user.username,
+      jti: tokenId,
+      type: 'access',
+    },
+    env.jwtSecret,
+    { expiresIn: env.jwtExpiresIn }
+  );
+
+  const decoded = jwt.decode(token);
+
+  return {
+    token,
+    tokenId,
+    expiresAtEpochSeconds: decoded.exp,
+    expiresAt: new Date(decoded.exp * 1000).toISOString(),
+  };
+};
+
+const createAuthResponse = (user) => {
+  const accessToken = signAccessToken(user);
+
+  return {
+    token: accessToken.token,
+    tokenType: 'Bearer',
+    expiresAt: accessToken.expiresAt,
+    user: createAuthPayload(user),
+  };
 };
 
 exports.registerUser = async ({ email, username, password, displayName, dateOfBirth }) => {
@@ -57,25 +103,43 @@ exports.registerUser = async ({ email, username, password, displayName, dateOfBi
     throw error;
   }
 
-  const token = jwt.sign(
-    {
-      sub: createdUser.id,
-      email: createdUser.email,
-      username: createdUser.username,
-    },
-    env.jwtSecret,
-    { expiresIn: env.jwtExpiresIn }
-  );
+  return createAuthResponse(createdUser);
+};
+
+exports.loginUser = async ({ identifier, password }) => {
+  if (!env.jwtSecret) {
+    throw createHttpError(500, 'JWT configuration is missing');
+  }
+
+  const result = await authModel.findUserForLogin(identifier);
+
+  if (result.rowCount === 0) {
+    throw createHttpError(401, 'Invalid credentials');
+  }
+
+  const user = result.rows[0];
+  const passwordMatches = await bcrypt.compare(password, user.password_hash);
+
+  if (!passwordMatches) {
+    throw createHttpError(401, 'Invalid credentials');
+  }
+
+  return createAuthResponse(user);
+};
+
+exports.logoutUser = async ({ userId, tokenId, tokenExpiresAtEpochSeconds }) => {
+  if (!tokenId || !tokenExpiresAtEpochSeconds) {
+    throw createHttpError(401, 'Invalid token');
+  }
+
+  await authModel.revokeAccessToken({
+    tokenId,
+    userId,
+    expiresAtEpochSeconds: tokenExpiresAtEpochSeconds,
+  });
 
   return {
-    token,
-    user: {
-      id: createdUser.id,
-      email: createdUser.email,
-      username: createdUser.username,
-      displayName: createdUser.display_name,
-      dateOfBirth: createdUser.date_of_birth,
-      createdAt: createdUser.created_at,
-    },
+    loggedOutAt: new Date().toISOString(),
+    userId,
   };
 };

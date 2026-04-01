@@ -6,6 +6,7 @@ const morgan = require('morgan');
 const apiRouter = require('./routes');
 const notFound = require('./middlewares/notFound');
 const errorHandler = require('./middlewares/errorHandler');
+const { requireAuth } = require('./middlewares/requireAuth');
 const env = require('./config/env');
 
 
@@ -24,6 +25,7 @@ app.get('/', (_req, res) => {
   });
 });
 
+app.use('/api/v1', requireAuth);
 app.use('/api/v1', apiRouter);
 
 app.use(notFound);

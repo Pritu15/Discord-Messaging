@@ -14,3 +14,4 @@ ALTER TABLE users
   ADD CONSTRAINT users_username_key UNIQUE (username); -- make username unique
 
 create index idx_users_email on users(email); -- index for faster lookup for login
+create index idx_users_username on users(username);
