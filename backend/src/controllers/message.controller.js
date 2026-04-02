@@ -36,7 +36,7 @@ exports.sendMessage = async (req, res) => {
   if (!content || !String(content).trim()) {
     return res.status(400).json({
       error: "Validation error",
-      details: ["content is required"]
+      details: ["content is required"],
     });
   }
 
@@ -96,9 +96,8 @@ exports.listMessages = async (req, res) => {
 
     res.json({
       messages: result.rows,
-      count: result.rows.length
+      count: result.rows.length,
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Database error" });
@@ -115,9 +114,8 @@ exports.addReaction = async (req, res) => {
 
     res.json({
       success: true,
-      message: "Reaction added"
+      message: "Reaction added",
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Database error" });
@@ -134,15 +132,80 @@ exports.removeReaction = async (req, res) => {
 
     res.json({
       success: true,
-      message: "Reaction removed"
+      message: "Reaction removed",
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Database error" });
   }
 };
 
+// PIN MESSAGE
+exports.pinMessage = async (req, res) => {
+  const { channelId, messageId } = req.params;
+  const pinnedBy = req.auth.userId;
+
+  try {
+    const result = await messageService.pinMessage({
+      messageId,
+      channelId,
+      pinnedBy,
+    });
+
+    if (result.rowCount === 0) {
+      return res.status(409).json({ error: "Message is already pinned" });
+    }
+
+    res.status(201).json({
+      success: true,
+      message: "Message pinned",
+      pinned: result.rows[0],
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database error" });
+  }
+};
+
+// UNPIN MESSAGE
+exports.unpinMessage = async (req, res) => {
+  const { channelId, messageId } = req.params;
+
+  try {
+    const result = await messageService.unpinMessage({ messageId, channelId });
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Pinned message not found" });
+    }
+
+    res.json({
+      success: true,
+      message: "Message unpinned",
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database error" });
+  }
+};
+
+// GET PINNED MESSAGES
+exports.getPinnedMessages = async (req, res) => {
+  const { channelId } = req.params;
+
+  try {
+    const result = await messageService.getPinnedMessages({ channelId });
+
+    res.json({
+      pinnedMessages: result.rows,
+      count: result.rows.length,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database error" });
+  }
+};
+
+// UPDATE MESSAGE
 exports.updateMessage = async (req, res) => {
   const { channelId, messageId } = req.params;
   const hasContent = Object.prototype.hasOwnProperty.call(req.body, "content");
@@ -159,15 +222,21 @@ exports.updateMessage = async (req, res) => {
   }
 
   if (deleteAttachmentIds && !Array.isArray(deleteAttachmentIds)) {
-    return res.status(400).json({ error: "deleteAttachmentIds must be an array" });
+    return res
+      .status(400)
+      .json({ error: "deleteAttachmentIds must be an array" });
   }
 
   if (hasContent && hasDeleteAttachmentIds) {
-    return res.status(400).json({ error: "Update content or delete attachments, not both" });
+    return res
+      .status(400)
+      .json({ error: "Update content or delete attachments, not both" });
   }
 
   if (hasDeleteAttachmentIds && deleteAttachmentIds.length === 0) {
-    return res.status(400).json({ error: "deleteAttachmentIds cannot be empty" });
+    return res
+      .status(400)
+      .json({ error: "deleteAttachmentIds cannot be empty" });
   }
 
   try {

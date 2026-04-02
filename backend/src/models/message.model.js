@@ -257,3 +257,46 @@ exports.removeReaction = async ({ messageId, userId, emoji }) => {
 
   return pool.query(query, [messageId, userId, emoji]);
 };
+
+// PIN MESSAGE
+exports.pinMessage = async ({ messageId, channelId, pinnedBy }) => {
+  const query = `
+    INSERT INTO pinned_messages (message_id, channel_id, pinned_by)
+    VALUES ($1, $2, $3)
+    ON CONFLICT (message_id) DO NOTHING
+    RETURNING *
+  `;
+
+  return pool.query(query, [messageId, channelId, pinnedBy]);
+};
+
+// UNPIN MESSAGE
+exports.unpinMessage = async ({ messageId, channelId }) => {
+  const query = `
+    DELETE FROM pinned_messages
+    WHERE message_id = $1 AND channel_id = $2
+    RETURNING *
+  `;
+
+  return pool.query(query, [messageId, channelId]);
+};
+
+// GET PINNED MESSAGES
+exports.getPinnedMessages = async ({ channelId }) => {
+  const query = `
+    SELECT
+      m.id,
+      m.content,
+      m.created_at,
+      pm.pinned_at,
+      pm.pinned_by,
+      u.username AS pinned_by_username
+    FROM pinned_messages pm
+    JOIN messages m ON pm.message_id = m.id
+    LEFT JOIN users u ON pm.pinned_by = u.id
+    WHERE pm.channel_id = $1
+    ORDER BY pm.pinned_at DESC
+  `;
+
+  return pool.query(query, [channelId]);
+};
