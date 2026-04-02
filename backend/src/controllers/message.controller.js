@@ -1,5 +1,39 @@
 const messageService = require("../services/message.service");
 
+exports.sendMessage = async (req, res) => {
+  const { serverId, channelId } = req.params;
+  const userId = req.auth.userId;
+  const { content } = req.body;
+
+  if (!content || !String(content).trim()) {
+    return res.status(400).json({
+      error: "Validation error",
+      details: ["content is required"],
+    });
+  }
+
+  try {
+    const createdMessage = await messageService.sendMessage({
+      serverId,
+      channelId,
+      authorId: userId,
+      content: String(content).trim(),
+    });
+
+    return res.status(201).json({
+      message: createdMessage.rows[0],
+    });
+  } catch (err) {
+    console.error(err);
+
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ error: err.message });
+    }
+
+    return res.status(500).json({ error: "Database error" });
+  }
+};
+
 exports.listMessages = async (req, res) => {
   const { serverId, channelId } = req.params;
   const { limit = 50, before, after } = req.query;
@@ -15,9 +49,8 @@ exports.listMessages = async (req, res) => {
 
     res.json({
       messages: result.rows,
-      count: result.rows.length
+      count: result.rows.length,
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Database error" });
@@ -34,9 +67,8 @@ exports.addReaction = async (req, res) => {
 
     res.json({
       success: true,
-      message: "Reaction added"
+      message: "Reaction added",
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Database error" });
@@ -53,9 +85,8 @@ exports.removeReaction = async (req, res) => {
 
     res.json({
       success: true,
-      message: "Reaction removed"
+      message: "Reaction removed",
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Database error" });
@@ -68,7 +99,11 @@ exports.pinMessage = async (req, res) => {
   const pinnedBy = req.auth.userId;
 
   try {
-    const result = await messageService.pinMessage({ messageId, channelId, pinnedBy });
+    const result = await messageService.pinMessage({
+      messageId,
+      channelId,
+      pinnedBy,
+    });
 
     if (result.rowCount === 0) {
       return res.status(409).json({ error: "Message is already pinned" });
@@ -77,9 +112,8 @@ exports.pinMessage = async (req, res) => {
     res.status(201).json({
       success: true,
       message: "Message pinned",
-      pinned: result.rows[0]
+      pinned: result.rows[0],
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Database error" });
@@ -99,9 +133,8 @@ exports.unpinMessage = async (req, res) => {
 
     res.json({
       success: true,
-      message: "Message unpinned"
+      message: "Message unpinned",
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Database error" });
@@ -117,11 +150,90 @@ exports.getPinnedMessages = async (req, res) => {
 
     res.json({
       pinnedMessages: result.rows,
-      count: result.rows.length
+      count: result.rows.length,
     });
-
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Database error" });
+  }
+};
+
+// UPDATE MESSAGE
+exports.updateMessage = async (req, res) => {
+  const { channelId, messageId } = req.params;
+  const hasContent = Object.prototype.hasOwnProperty.call(req.body, "content");
+  const { content, deleteAttachmentIds } = req.body;
+
+  const hasDeleteAttachmentIds = Array.isArray(deleteAttachmentIds);
+
+  if (!hasContent && !hasDeleteAttachmentIds) {
+    return res.status(400).json({ error: "Nothing to update" });
+  }
+
+  if (hasContent && typeof content !== "string") {
+    return res.status(400).json({ error: "content must be a string" });
+  }
+
+  if (deleteAttachmentIds && !Array.isArray(deleteAttachmentIds)) {
+    return res
+      .status(400)
+      .json({ error: "deleteAttachmentIds must be an array" });
+  }
+
+  if (hasContent && hasDeleteAttachmentIds) {
+    return res
+      .status(400)
+      .json({ error: "Update content or delete attachments, not both" });
+  }
+
+  if (hasDeleteAttachmentIds && deleteAttachmentIds.length === 0) {
+    return res
+      .status(400)
+      .json({ error: "deleteAttachmentIds cannot be empty" });
+  }
+
+  try {
+    const result = await messageService.updateMessage({
+      channelId,
+      messageId,
+      content,
+      deleteAttachmentIds,
+      hasContent,
+    });
+
+    if (!result) {
+      return res.status(404).json({ error: "Message not found" });
+    }
+
+    return res.json({
+      message: result.message,
+      deletedAttachmentIds: result.deletedAttachmentIds,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Database error" });
+  }
+};
+
+exports.deleteMessage = async (req, res) => {
+  const { channelId, messageId } = req.params;
+
+  try {
+    const result = await messageService.deleteMessage({
+      channelId,
+      messageId,
+    });
+
+    if (!result) {
+      return res.status(404).json({ error: "Message not found" });
+    }
+
+    return res.json({
+      deleted: true,
+      message: result,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Database error" });
   }
 };
