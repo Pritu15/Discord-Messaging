@@ -1,5 +1,6 @@
 const express = require("express");
 const {
+  sendMessage,
   listMessages,
   addReaction,
   removeReaction
@@ -8,6 +9,8 @@ const {
 
 
 const router = express.Router({ mergeParams: true });
+
+router.post("/", sendMessage);
 
 router.get("/", listMessages);
 
