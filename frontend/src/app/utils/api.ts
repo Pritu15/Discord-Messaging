@@ -5,6 +5,14 @@ const viteEnv = (import.meta as ImportMeta & {
 const API_BASE_URL =
   viteEnv?.VITE_API_BASE_URL?.replace(/\/$/, "");
 
+const resolveApiBaseUrl = () => {
+  if (!API_BASE_URL) {
+    throw new Error("Missing VITE_API_BASE_URL in frontend environment");
+  }
+
+  return API_BASE_URL;
+};
+
 type RequestOptions = {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   body?: unknown;
@@ -41,7 +49,7 @@ async function apiRequest<T>(path: string, options: RequestOptions = {}): Promis
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${resolveApiBaseUrl()}${path}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
@@ -69,7 +77,7 @@ async function apiRequestForm<T>(
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${resolveApiBaseUrl()}${path}`, {
     method: "POST",
     headers,
     body: formData,
