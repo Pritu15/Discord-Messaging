@@ -139,6 +139,7 @@ exports.sendMessageWithAttachment = async ({ serverId, channelId, authorId, cont
 
     return {
       message: messageResult.rows[0],
+      attachment_id: attachmentResult.rows[0].id,
       file_url: attachmentResult.rows[0].file_url,
       file_name: attachmentResult.rows[0].file_name,
       file_size: attachmentResult.rows[0].file_size,
@@ -230,13 +231,13 @@ exports.deleteMessage = async ({ channelId, messageId, userId }) => {
 };
 
 // ADD REACTION
-exports.addReaction = async ({ messageId, userId, emoji }) => {
-  return messageModel.addReaction({ messageId, userId, emoji });
+exports.addReaction = async ({ channelId, messageId, userId, emoji }) => {
+  return messageModel.addReaction({ channelId, messageId, userId, emoji });
 };
 
 // REMOVE REACTION
-exports.removeReaction = async ({ messageId, userId, emoji }) => {
-  return messageModel.removeReaction({ messageId, userId, emoji });
+exports.removeReaction = async ({ channelId, messageId, userId, emoji }) => {
+  return messageModel.removeReaction({ channelId, messageId, userId, emoji });
 };
 
 // PIN MESSAGE

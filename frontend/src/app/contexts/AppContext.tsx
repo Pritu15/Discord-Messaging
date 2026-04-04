@@ -135,6 +135,71 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
   const [socket, setSocket] = useState<AppSocket | null>(null);
 
+  const applyReactionMutation = (
+    prevMessages: Message[],
+    messageId: string,
+    emoji: string,
+    userId: string,
+    action: "add" | "remove"
+  ) => {
+    return prevMessages.map((msg) => {
+      if (msg.id !== messageId) return msg;
+
+      const reaction = msg.reactions.find((entry) => entry.emoji === emoji);
+
+      if (action === "add") {
+        if (!reaction) {
+          return {
+            ...msg,
+            reactions: [...msg.reactions, { emoji, userIds: [userId], count: 1 }],
+          };
+        }
+
+        if (reaction.userIds.includes(userId)) {
+          return msg;
+        }
+
+        return {
+          ...msg,
+          reactions: msg.reactions.map((entry) =>
+            entry.emoji === emoji
+              ? {
+                  ...entry,
+                  userIds: [...entry.userIds, userId],
+                  count: entry.count + 1,
+                }
+              : entry
+          ),
+        };
+      }
+
+      if (!reaction || !reaction.userIds.includes(userId)) {
+        return msg;
+      }
+
+      const remaining = reaction.userIds.filter((id) => id !== userId);
+      if (remaining.length === 0) {
+        return {
+          ...msg,
+          reactions: msg.reactions.filter((entry) => entry.emoji !== emoji),
+        };
+      }
+
+      return {
+        ...msg,
+        reactions: msg.reactions.map((entry) =>
+          entry.emoji === emoji
+            ? {
+                ...entry,
+                userIds: remaining,
+                count: remaining.length,
+              }
+            : entry
+        ),
+      };
+    });
+  };
+
   useEffect(() => {
     if (!isAuthenticated || !token) {
       setSocket((prev) => {
@@ -203,13 +268,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         edited: false,
         reactions: [],
         pinned: false,
-        attachments: (incoming.attachments ?? []).map((attachment) => ({
-          id: String(attachment.id ?? "uploaded"),
-          fileUrl: attachment.file_url || "",
-          fileName: attachment.file_name || "attachment",
-          fileSize: attachment.file_size,
-          mimeType: attachment.mime_type,
-        })),
+        attachments: (incoming.attachments ?? [])
+          .filter((attachment) => Boolean(attachment.id))
+          .map((attachment) => ({
+            id: String(attachment.id),
+            fileUrl: attachment.file_url || "",
+            fileName: attachment.file_name || "attachment",
+            fileSize: attachment.file_size,
+            mimeType: attachment.mime_type,
+          })),
       };
 
       setMessages((prev) => {
@@ -219,8 +286,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return [...prev, mappedMessage];
       });
 
-      if (incoming.author?.id && incoming.author.username) {
-        const authorId = String(incoming.author.id);
+      const incomingAuthorId = incoming.author?.id;
+      const incomingAuthorUsername = incoming.author?.username;
+
+      if (incomingAuthorId && incomingAuthorUsername) {
+        const authorId = String(incomingAuthorId);
         setUsers((prev) => {
           if (prev.some((entry) => entry.id === authorId)) {
             return prev;
@@ -229,15 +299,84 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           return [
             {
               id: authorId,
-              username: incoming.author.username,
-              displayName: incoming.author.username,
-              avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${incoming.author.username}`,
+              username: incomingAuthorUsername,
+              displayName: incomingAuthorUsername,
+              avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${incomingAuthorUsername}`,
               status: "online",
             },
             ...prev,
           ];
         });
       }
+    };
+
+    const handleReactionAdd = (incoming: {
+      messageId: string | number;
+      emoji: string;
+      user?: {
+        id: string | number;
+        username?: string;
+      };
+    }) => {
+      const reactorId = incoming.user?.id;
+      if (!reactorId) {
+        return;
+      }
+
+      setMessages((prev) =>
+        applyReactionMutation(
+          prev,
+          String(incoming.messageId),
+          String(incoming.emoji),
+          String(reactorId),
+          "add"
+        )
+      );
+
+      const incomingReactorUsername = incoming.user?.username;
+
+      if (incomingReactorUsername) {
+        const authorId = String(reactorId);
+        setUsers((prev) => {
+          if (prev.some((entry) => entry.id === authorId)) {
+            return prev;
+          }
+
+          return [
+            {
+              id: authorId,
+              username: incomingReactorUsername,
+              displayName: incomingReactorUsername,
+              avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${incomingReactorUsername}`,
+              status: "online",
+            },
+            ...prev,
+          ];
+        });
+      }
+    };
+
+    const handleReactionRemove = (incoming: {
+      messageId: string | number;
+      emoji: string;
+      user?: {
+        id: string | number;
+      };
+    }) => {
+      const reactorId = incoming.user?.id;
+      if (!reactorId) {
+        return;
+      }
+
+      setMessages((prev) =>
+        applyReactionMutation(
+          prev,
+          String(incoming.messageId),
+          String(incoming.emoji),
+          String(reactorId),
+          "remove"
+        )
+      );
     };
 
     const handleMessageUpdated = (payload: {
@@ -276,10 +415,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
 
     socket.on("message:new", handleMessageNew);
+    socket.on("message:reaction:add", handleReactionAdd);
+    socket.on("message:reaction:remove", handleReactionRemove);
     socket.on("message:updated", handleMessageUpdated);
 
     return () => {
       socket.off("message:new", handleMessageNew);
+      socket.off("message:reaction:add", handleReactionAdd);
+      socket.off("message:reaction:remove", handleReactionRemove);
       socket.off("message:updated", handleMessageUpdated);
     };
   }, [socket, selectedChannelId, user]);
@@ -521,13 +664,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       attachments: response.file_url
         ? [
             {
-              id: "uploaded",
+              id: String(response.attachment_id || ""),
               fileUrl: response.file_url,
               fileName: response.file_name || "attachment",
               fileSize: response.file_size,
               mimeType: response.mime_type,
             },
-          ]
+          ].filter((attachment) => Boolean(attachment.id))
         : [],
     };
 
@@ -639,44 +782,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
 
     setMessages((prev) =>
-      prev.map((msg) => {
-        if (msg.id !== messageId) return msg;
-
-        const reaction = msg.reactions.find((r) => r.emoji === emoji);
-        if (!reaction) {
-          return {
-            ...msg,
-            reactions: [...msg.reactions, { emoji, userIds: [userId], count: 1 }],
-          };
-        }
-
-        const hasUser = reaction.userIds.includes(userId);
-        if (hasUser) {
-          const remaining = reaction.userIds.filter((id) => id !== userId);
-          if (remaining.length === 0) {
-            return {
-              ...msg,
-              reactions: msg.reactions.filter((r) => r.emoji !== emoji),
-            };
-          }
-
-          return {
-            ...msg,
-            reactions: msg.reactions.map((r) =>
-              r.emoji === emoji ? { ...r, userIds: remaining, count: remaining.length } : r
-            ),
-          };
-        }
-
-        return {
-          ...msg,
-          reactions: msg.reactions.map((r) =>
-            r.emoji === emoji
-              ? { ...r, userIds: [...r.userIds, userId], count: r.count + 1 }
-              : r
-          ),
-        };
-      })
+      applyReactionMutation(prev, messageId, emoji, userId, hasReacted ? "remove" : "add")
     );
   };
 
