@@ -30,5 +30,7 @@ services:
     envVars:
       - key: VITE_API_BASE_URL
         value: https://your-backend-service.onrender.com/api/v1
+        sync: false
       - key: VITE_SOCKET_URL
         value: https://your-backend-service.onrender.com
+        sync: false
