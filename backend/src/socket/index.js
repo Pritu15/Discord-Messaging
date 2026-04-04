@@ -2,9 +2,6 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const env = require('../config/env');
 const authModel = require('../models/auth.model');
-const registerMessageHandlers = require('./handlers/message.handler');
-const registerReactionHandlers = require('./handlers/reaction.handler');
-const registerPinHandlers = require('./handlers/pin.handler');
 
 const initSocket = (server) => {
   const io = new Server(server, {
@@ -70,10 +67,6 @@ const initSocket = (server) => {
       socket.leave(`channel:${channelId}`);
       console.log(`[WS] ${socket.user.username} left channel:${channelId}`);
     });
-
-    registerMessageHandlers(io, socket);
-    registerReactionHandlers(io, socket);
-    registerPinHandlers(io, socket);
 
     socket.on('disconnect', (reason) => {
       console.log(`[WS] Disconnected: ${socket.user.username} — ${reason}`);

@@ -1,4 +1,5 @@
 const messageService = require("../services/message.service");
+const { getIO } = require("../socket/io");
 
 exports.sendMessage = async (req, res) => {
   const { serverId, channelId } = req.params;
@@ -62,6 +63,39 @@ exports.sendMessage = async (req, res) => {
           authorId: userId,
           content: String(content).trim(),
         });
+
+    const createdMessage = file ? result.message : result.rows?.[0];
+
+    if (createdMessage) {
+      try {
+        const io = getIO();
+        if (io) {
+          io.to(`channel:${channelId}`).emit("message:new", {
+            id: createdMessage.id,
+            channelId: createdMessage.channel_id,
+            content: createdMessage.content,
+            createdAt: createdMessage.created_at,
+            author: {
+              id: userId,
+              username: req.auth.username,
+            },
+            attachments: file
+              ? [
+                  {
+                    id: "uploaded",
+                    file_url: result.file_url,
+                    file_name: result.file_name,
+                    file_size: result.file_size,
+                    mime_type: result.mime_type,
+                  },
+                ]
+              : [],
+          });
+        }
+      } catch (socketError) {
+        console.error("[WS] message:new emit error", socketError);
+      }
+    }
 
     return res.status(201).json(
       file

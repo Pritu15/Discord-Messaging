@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useAuth } from "./AuthContext";
 import {
   addReactionToMessage,
@@ -133,31 +133,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [users, setUsers] = useState<UserProfile[]>(mockUsers);
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
-  const socketRef = useRef<AppSocket | null>(null);
+  const [socket, setSocket] = useState<AppSocket | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated || !token) {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
-      }
+      setSocket((prev) => {
+        if (prev) {
+          prev.disconnect();
+        }
+        return null;
+      });
       return;
     }
 
-    if (!socketRef.current) {
-      socketRef.current = createSocket(token);
-    }
+    const nextSocket = createSocket(token);
+    setSocket(nextSocket);
 
     return () => {
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
-      }
+      nextSocket.disconnect();
     };
   }, [isAuthenticated, token]);
 
   useEffect(() => {
-    const socket = socketRef.current;
     if (!socket) return;
 
     if (selectedChannelId) {
@@ -169,7 +166,86 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         socket.emit("channel:leave", selectedChannelId);
       }
     };
-  }, [selectedChannelId]);
+  }, [socket, selectedChannelId]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleMessageNew = (incoming: {
+      id: string | number;
+      channelId: string | number;
+      content: string;
+      createdAt: string;
+      author?: {
+        id: string | number;
+        username?: string;
+      };
+      attachments?: Array<{
+        id?: string | number;
+        file_url?: string;
+        file_name?: string;
+        file_size?: number;
+        mime_type?: string;
+      }>;
+    }) => {
+      const incomingChannelId = String(incoming.channelId);
+
+      if (!selectedChannelId || incomingChannelId !== selectedChannelId) {
+        return;
+      }
+
+      const mappedMessage: Message = {
+        id: String(incoming.id),
+        content: incoming.content,
+        userId: String(incoming.author?.id ?? user?.id ?? mockUsers[0].id),
+        channelId: incomingChannelId,
+        createdAt: incoming.createdAt,
+        edited: false,
+        reactions: [],
+        pinned: false,
+        attachments: (incoming.attachments ?? []).map((attachment) => ({
+          id: String(attachment.id ?? "uploaded"),
+          fileUrl: attachment.file_url || "",
+          fileName: attachment.file_name || "attachment",
+          fileSize: attachment.file_size,
+          mimeType: attachment.mime_type,
+        })),
+      };
+
+      setMessages((prev) => {
+        if (prev.some((msg) => msg.id === mappedMessage.id)) {
+          return prev;
+        }
+        return [...prev, mappedMessage];
+      });
+
+      if (incoming.author?.id && incoming.author.username) {
+        const authorId = String(incoming.author.id);
+        setUsers((prev) => {
+          if (prev.some((entry) => entry.id === authorId)) {
+            return prev;
+          }
+
+          return [
+            {
+              id: authorId,
+              username: incoming.author.username,
+              displayName: incoming.author.username,
+              avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${incoming.author.username}`,
+              status: "online",
+            },
+            ...prev,
+          ];
+        });
+      }
+    };
+
+    socket.on("message:new", handleMessageNew);
+
+    return () => {
+      socket.off("message:new", handleMessageNew);
+    };
+  }, [socket, selectedChannelId, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -418,7 +494,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         : [],
     };
 
-    setMessages((prev) => [...prev, newMessage]);
+    setMessages((prev) => {
+      if (prev.some((msg) => msg.id === newMessage.id)) {
+        return prev;
+      }
+      return [...prev, newMessage];
+    });
   };
 
   const editMessage = async (messageId: string, content: string) => {
