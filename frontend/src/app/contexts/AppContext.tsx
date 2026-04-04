@@ -379,14 +379,51 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       );
     };
 
+    const handleMessageUpdated = (payload: {
+      messageId: string | number;
+      channelId: string | number;
+      content?: string;
+      editedAt?: string;
+      deletedAttachmentIds?: Array<string | number>;
+    }) => {
+      const incomingChannelId = String(payload.channelId);
+
+      if (!selectedChannelId || incomingChannelId !== selectedChannelId) {
+        return;
+      }
+
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.id !== String(payload.messageId)) return msg;
+
+          const removed = new Set(
+            (payload.deletedAttachmentIds || []).map((id) => String(id))
+          );
+          const remainingAttachments = removed.size
+            ? (msg.attachments || []).filter((attachment) => !removed.has(attachment.id))
+            : msg.attachments;
+
+          return {
+            ...msg,
+            content: payload.content ?? msg.content,
+            edited: true,
+            updatedAt: payload.editedAt ?? msg.updatedAt,
+            attachments: remainingAttachments,
+          };
+        })
+      );
+    };
+
     socket.on("message:new", handleMessageNew);
     socket.on("message:reaction:add", handleReactionAdd);
     socket.on("message:reaction:remove", handleReactionRemove);
+    socket.on("message:updated", handleMessageUpdated);
 
     return () => {
       socket.off("message:new", handleMessageNew);
       socket.off("message:reaction:add", handleReactionAdd);
       socket.off("message:reaction:remove", handleReactionRemove);
+      socket.off("message:updated", handleMessageUpdated);
     };
   }, [socket, selectedChannelId, user]);
 

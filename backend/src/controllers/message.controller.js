@@ -293,6 +293,7 @@ exports.getPinnedMessages = async (req, res) => {
 // UPDATE MESSAGE
 exports.updateMessage = async (req, res) => {
   const { channelId, messageId } = req.params;
+  const userId = req.auth.userId;
   const hasContent = Object.prototype.hasOwnProperty.call(req.body, "content");
   const { content, deleteAttachmentIds } = req.body;
 
@@ -340,6 +341,22 @@ exports.updateMessage = async (req, res) => {
 
     if (result.forbidden) {
       return res.status(403).json({ error: "Not allowed to edit this message" });
+    }
+
+    try {
+      const io = getIO();
+      if (io) {
+        io.to(`channel:${channelId}`).emit("message:updated", {
+          messageId: result.message.id,
+          channelId: result.message.channel_id,
+          content: result.message.content,
+          editedAt: result.message.edited_at,
+          deletedAttachmentIds: result.deletedAttachmentIds || [],
+        });
+        console.debug("[WS] message:updated emitted for messageId:", messageId);
+      }
+    } catch (socketError) {
+      console.error("[WS] message:updated emit error", socketError);
     }
 
     return res.json({

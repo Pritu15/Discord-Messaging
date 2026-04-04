@@ -2,6 +2,7 @@ const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 const env = require('../config/env');
 const authModel = require('../models/auth.model');
+const { setIO } = require('./io');
 
 const initSocket = (server) => {
   const io = new Server(server, {
@@ -51,6 +52,8 @@ const initSocket = (server) => {
       return next(new Error('Invalid token'));
     }
   });
+
+  setIO(io);
 
   // ── Connection ───────────────────────────────────────────────
   io.on('connection', (socket) => {
