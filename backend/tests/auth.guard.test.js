@@ -1,4 +1,12 @@
 const request = require('supertest');
+
+jest.mock('../src/config/env', () => ({
+  nodeEnv: 'test',
+  jwtSecret: 'test-secret',
+  jwtExpiresIn: '7d',
+  corsOrigin: '',
+}));
+
 const app = require('../src/app');
 
 describe('Auth guard for protected routes', () => {
