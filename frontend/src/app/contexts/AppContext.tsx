@@ -112,6 +112,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
   const [socket, setSocket] = useState<AppSocket | null>(null);
 
+  const isAttachmentPlaceholderContent = (value?: string) => {
+    if (!value) return false;
+    return /^\[\d+ attachments?\]$/i.test(value.trim());
+  };
+
   const applyReactionMutation = (
     prevMessages: Message[],
     messageId: string,
@@ -378,8 +383,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       setMessages((prev) =>
-        prev.map((msg) => {
-          if (msg.id !== String(payload.messageId)) return msg;
+        prev.reduce<Message[]>((acc, msg) => {
+          if (msg.id !== String(payload.messageId)) {
+            acc.push(msg);
+            return acc;
+          }
 
           const removed = new Set(
             (payload.deletedAttachmentIds || []).map((id) => String(id))
@@ -388,14 +396,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             ? (msg.attachments || []).filter((attachment) => !removed.has(attachment.id))
             : msg.attachments;
 
-          return {
+          const nextContent = payload.content ?? msg.content;
+          const shouldDropPlaceholderOnlyMessage =
+            (remainingAttachments?.length || 0) === 0 &&
+            isAttachmentPlaceholderContent(nextContent);
+
+          if (shouldDropPlaceholderOnlyMessage) {
+            return acc;
+          }
+
+          acc.push({
             ...msg,
-            content: payload.content ?? msg.content,
+            content: nextContent,
             edited: true,
             updatedAt: payload.editedAt ?? msg.updatedAt,
             attachments: remainingAttachments,
-          };
-        })
+          });
+
+          return acc;
+        }, [])
       );
     };
 
@@ -828,16 +847,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
 
     setMessages((prev) =>
-      prev.map((msg) => {
-        if (msg.id !== messageId) return msg;
+      prev.reduce<Message[]>((acc, msg) => {
+        if (msg.id !== messageId) {
+          acc.push(msg);
+          return acc;
+        }
 
         const removed = new Set(response.deletedAttachmentIds || attachmentIds);
         const remaining = (msg.attachments || []).filter(
           (attachment) => !removed.has(attachment.id)
         );
 
-        return { ...msg, attachments: remaining };
-      })
+        const shouldDropPlaceholderOnlyMessage =
+          remaining.length === 0 && isAttachmentPlaceholderContent(msg.content);
+
+        if (shouldDropPlaceholderOnlyMessage) {
+          return acc;
+        }
+
+        acc.push({ ...msg, attachments: remaining });
+        return acc;
+      }, [])
     );
   };
 
