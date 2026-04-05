@@ -67,7 +67,6 @@ export function MessageItem({ message }: MessageItemProps) {
 
     try {
       await deleteMessage(message.id);
-      toast.success("Message deleted");
       setShowDeleteDialog(false);
     } catch (error) {
       toast.error("Failed to delete message");
@@ -79,7 +78,6 @@ export function MessageItem({ message }: MessageItemProps) {
 
     try {
       await togglePin(message.id);
-      toast.success(message.pinned ? "Message unpinned" : "Message pinned");
     } catch (error) {
       toast.error("Failed to pin message");
     }

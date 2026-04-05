@@ -823,26 +823,54 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       throw new Error("Not authenticated");
     }
 
-    const response = await updateMessageContent({
-      serverId: selectedServerId,
-      channelId: selectedChannelId,
-      messageId,
-      content,
-      token,
-    });
+    let previousMessage: Message | undefined;
+    const optimisticUpdatedAt = new Date().toISOString();
 
     setMessages((prev) =>
-      prev.map((msg) =>
-        msg.id === messageId
-          ? {
-              ...msg,
-              content: response.message.content,
-              edited: true,
-              updatedAt: response.message.edited_at ?? new Date().toISOString(),
-            }
-          : msg
-      )
+      prev.map((msg) => {
+        if (msg.id !== messageId) {
+          return msg;
+        }
+
+        previousMessage = msg;
+        return {
+          ...msg,
+          content,
+          edited: true,
+          updatedAt: optimisticUpdatedAt,
+        };
+      })
     );
+
+    try {
+      const response = await updateMessageContent({
+        serverId: selectedServerId,
+        channelId: selectedChannelId,
+        messageId,
+        content,
+        token,
+      });
+
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId
+            ? {
+                ...msg,
+                content: response.message.content,
+                edited: true,
+                updatedAt: response.message.edited_at ?? new Date().toISOString(),
+              }
+            : msg
+        )
+      );
+    } catch (error) {
+      if (previousMessage) {
+        setMessages((prev) =>
+          prev.map((msg) => (msg.id === messageId ? previousMessage as Message : msg))
+        );
+      }
+      throw error;
+    }
   };
 
   const deleteMessageAttachmentsHandler = async (
@@ -880,14 +908,42 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       throw new Error("Not authenticated");
     }
 
-    await deleteMessageById({
-      serverId: selectedServerId,
-      channelId: selectedChannelId,
-      messageId,
-      token,
+    let removedMessage: Message | undefined;
+    let removedIndex = -1;
+
+    setMessages((prev) => {
+      removedIndex = prev.findIndex((msg) => msg.id === messageId);
+      if (removedIndex === -1) {
+        return prev;
+      }
+
+      removedMessage = prev[removedIndex];
+      return prev.filter((msg) => msg.id !== messageId);
     });
 
-    setMessages((prev) => prev.filter((msg) => msg.id !== messageId));
+    try {
+      await deleteMessageById({
+        serverId: selectedServerId,
+        channelId: selectedChannelId,
+        messageId,
+        token,
+      });
+    } catch (error) {
+      if (removedMessage && removedIndex >= 0) {
+        setMessages((prev) => {
+          if (prev.some((msg) => msg.id === removedMessage?.id)) {
+            return prev;
+          }
+
+          const next = [...prev];
+          const insertIndex = Math.min(Math.max(removedIndex, 0), next.length);
+          next.splice(insertIndex, 0, removedMessage as Message);
+          return next;
+        });
+      }
+
+      throw error;
+    }
   };
 
   const toggleReaction = async (messageId: string, emoji: string, userId: string) => {
@@ -898,28 +954,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const target = messages.find((msg) => msg.id === messageId);
     const existingReaction = target?.reactions.find((r) => r.emoji === emoji);
     const hasReacted = existingReaction ? existingReaction.userIds.includes(userId) : false;
+    const nextAction: "add" | "remove" = hasReacted ? "remove" : "add";
+    const rollbackAction: "add" | "remove" = hasReacted ? "add" : "remove";
 
-    if (hasReacted) {
-      await removeReactionFromMessage({
-        serverId: selectedServerId,
-        channelId: selectedChannelId,
-        messageId,
-        emoji,
-        token,
-      });
-    } else {
-      await addReactionToMessage({
-        serverId: selectedServerId,
-        channelId: selectedChannelId,
-        messageId,
-        emoji,
-        token,
-      });
+    setMessages((prev) => applyReactionMutation(prev, messageId, emoji, userId, nextAction));
+
+    try {
+      if (hasReacted) {
+        await removeReactionFromMessage({
+          serverId: selectedServerId,
+          channelId: selectedChannelId,
+          messageId,
+          emoji,
+          token,
+        });
+      } else {
+        await addReactionToMessage({
+          serverId: selectedServerId,
+          channelId: selectedChannelId,
+          messageId,
+          emoji,
+          token,
+        });
+      }
+    } catch (error) {
+      setMessages((prev) => applyReactionMutation(prev, messageId, emoji, userId, rollbackAction));
+      throw error;
     }
-
-    setMessages((prev) =>
-      applyReactionMutation(prev, messageId, emoji, userId, hasReacted ? "remove" : "add")
-    );
   };
 
   const togglePin = async (messageId: string) => {
@@ -929,25 +990,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const target = messages.find((msg) => msg.id === messageId);
     const shouldUnpin = Boolean(target?.pinned);
+    const nextPinnedState = !shouldUnpin;
 
-    if (shouldUnpin) {
-      await unpinMessage({
-        serverId: selectedServerId,
-        channelId: selectedChannelId,
-        messageId,
-        token,
-      });
+    setMessages((prev) => applyPinMutation(prev, messageId, nextPinnedState));
 
-      setMessages((prev) => applyPinMutation(prev, messageId, false));
-    } else {
-      await pinMessage({
-        serverId: selectedServerId,
-        channelId: selectedChannelId,
-        messageId,
-        token,
-      });
-
-      setMessages((prev) => applyPinMutation(prev, messageId, true));
+    try {
+      if (shouldUnpin) {
+        await unpinMessage({
+          serverId: selectedServerId,
+          channelId: selectedChannelId,
+          messageId,
+          token,
+        });
+      } else {
+        await pinMessage({
+          serverId: selectedServerId,
+          channelId: selectedChannelId,
+          messageId,
+          token,
+        });
+      }
+    } catch (error) {
+      setMessages((prev) => applyPinMutation(prev, messageId, shouldUnpin));
+      throw error;
     }
   };
 
