@@ -20,6 +20,7 @@ import { createSocket, type AppSocket } from "../utils/socket";
 
 export interface Message {
   id: string;
+  renderKey?: string;
   content: string;
   userId: string;
   channelId: string;
@@ -29,6 +30,7 @@ export interface Message {
   reactions: Reaction[];
   pinned: boolean;
   attachments?: MessageAttachment[];
+  optimistic?: boolean;
 }
 
 export interface MessageAttachment {
@@ -37,6 +39,7 @@ export interface MessageAttachment {
   fileName: string;
   fileSize?: number;
   mimeType?: string;
+  isLocalPreview?: boolean;
 }
 
 export interface Reaction {
@@ -293,6 +296,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (prev.some((msg) => msg.id === mappedMessage.id)) {
           return prev;
         }
+
+        const incomingAuthorId = String(incoming.author?.id ?? "");
+        const optimisticIndex = prev.findIndex(
+          (msg) =>
+            msg.optimistic &&
+            msg.channelId === incomingChannelId &&
+            msg.content === mappedMessage.content &&
+            msg.userId === incomingAuthorId
+        );
+
+        if (optimisticIndex >= 0) {
+          const optimisticMessage = prev[optimisticIndex];
+          const next = [...prev];
+          next[optimisticIndex] = {
+            ...mappedMessage,
+            renderKey: optimisticMessage.renderKey || optimisticMessage.id,
+          };
+          return next;
+        }
+
         return [...prev, mappedMessage];
       });
 
@@ -708,44 +731,91 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       throw new Error("Not authenticated");
     }
 
-    const response = await sendMessageToChannel({
-      serverId: selectedServerId,
-      channelId,
-      content,
-      token,
-      attachments,
+    const tempId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? `temp-${crypto.randomUUID()}`
+        : `temp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const createdAt = new Date().toISOString();
+    const senderUserId = user?.id ?? mockUsers[0].id;
+
+    const localPreviewUrls: string[] = [];
+    const optimisticAttachments = (attachments ?? []).map((file, index) => {
+      const previewUrl = URL.createObjectURL(file);
+      localPreviewUrls.push(previewUrl);
+
+      return {
+        id: `temp-attachment-${tempId}-${index}`,
+        fileUrl: previewUrl,
+        fileName: file.name,
+        fileSize: file.size,
+        mimeType: file.type,
+        isLocalPreview: true,
+      };
     });
 
-    const fallbackUserId = user?.id ?? mockUsers[0].id;
-    const newMessage: Message = {
-      id: String(response.message.id),
-      content: response.message.content,
-      userId: String(response.message.author_id ?? fallbackUserId),
-      channelId: String(response.message.channel_id ?? channelId),
-      createdAt: response.message.created_at,
-      updatedAt: response.message.edited_at ?? undefined,
-      edited: Boolean(response.message.edited_at),
+    const optimisticMessage: Message = {
+      id: tempId,
+      renderKey: tempId,
+      content,
+      userId: senderUserId,
+      channelId,
+      createdAt,
+      edited: false,
       reactions: [],
       pinned: false,
-      attachments: response.file_url
-        ? [
-            {
-              id: String(response.attachment_id || ""),
-              fileUrl: response.file_url,
-              fileName: response.file_name || "attachment",
-              fileSize: response.file_size,
-              mimeType: response.mime_type,
-            },
-          ].filter((attachment) => Boolean(attachment.id))
-        : [],
+      attachments: optimisticAttachments,
+      optimistic: true,
     };
 
-    setMessages((prev) => {
-      if (prev.some((msg) => msg.id === newMessage.id)) {
-        return prev;
-      }
-      return [...prev, newMessage];
-    });
+    setMessages((prev) => [...prev, optimisticMessage]);
+
+    try {
+      const response = await sendMessageToChannel({
+        serverId: selectedServerId,
+        channelId,
+        content,
+        token,
+        attachments,
+      });
+
+      const fallbackUserId = user?.id ?? mockUsers[0].id;
+      const newMessage: Message = {
+        id: String(response.message.id),
+        renderKey: tempId,
+        content: response.message.content,
+        userId: String(response.message.author_id ?? fallbackUserId),
+        channelId: String(response.message.channel_id ?? channelId),
+        createdAt: response.message.created_at,
+        updatedAt: response.message.edited_at ?? undefined,
+        edited: Boolean(response.message.edited_at),
+        reactions: [],
+        pinned: false,
+        attachments: response.file_url
+          ? [
+              {
+                id: String(response.attachment_id || ""),
+                fileUrl: response.file_url,
+                fileName: response.file_name || "attachment",
+                fileSize: response.file_size,
+                mimeType: response.mime_type,
+              },
+            ].filter((attachment) => Boolean(attachment.id))
+          : [],
+      };
+
+      setMessages((prev) => {
+        const withoutOptimistic = prev.filter((msg) => msg.id !== tempId);
+        if (withoutOptimistic.some((msg) => msg.id === newMessage.id)) {
+          return withoutOptimistic;
+        }
+        return [...withoutOptimistic, newMessage];
+      });
+    } catch (error) {
+      setMessages((prev) => prev.filter((msg) => msg.id !== tempId));
+      throw error;
+    } finally {
+      localPreviewUrls.forEach((url) => URL.revokeObjectURL(url));
+    }
   };
 
   const editMessage = async (messageId: string, content: string) => {

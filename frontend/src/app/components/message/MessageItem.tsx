@@ -58,10 +58,13 @@ export function MessageItem({ message }: MessageItemProps) {
   const messageUser = users.find((u) => u.id === message.userId);
   const currentUserId = authUser?.id || "user-1";
   const isAuthor = authUser?.id === message.userId;
+  const isSending = Boolean(message.optimistic);
 
   if (!messageUser) return null;
 
   const handleDelete = async () => {
+    if (isSending) return;
+
     try {
       await deleteMessage(message.id);
       toast.success("Message deleted");
@@ -72,6 +75,8 @@ export function MessageItem({ message }: MessageItemProps) {
   };
 
   const handlePin = async () => {
+    if (isSending) return;
+
     try {
       await togglePin(message.id);
       toast.success(message.pinned ? "Message unpinned" : "Message pinned");
@@ -81,6 +86,8 @@ export function MessageItem({ message }: MessageItemProps) {
   };
 
   const handleReaction = async (emoji: string) => {
+    if (isSending) return;
+
     try {
       await toggleReaction(message.id, emoji, currentUserId);
       setShowEmojiPicker(false);
@@ -90,6 +97,8 @@ export function MessageItem({ message }: MessageItemProps) {
   };
 
   const handleReactionClick = async (emoji: string) => {
+    if (isSending) return;
+
     try {
       await toggleReaction(message.id, emoji, currentUserId);
     } catch (error) {
@@ -115,6 +124,15 @@ export function MessageItem({ message }: MessageItemProps) {
     } catch {
       toast.error("Failed to download attachment");
     }
+  };
+
+  const handleAttachmentClick = async (attachmentId: string, fileUrl: string, isLocalPreview?: boolean) => {
+    if (isLocalPreview || fileUrl.startsWith("blob:")) {
+      window.open(fileUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    await handleAttachmentDownload(attachmentId);
   };
 
   return (
@@ -160,6 +178,7 @@ export function MessageItem({ message }: MessageItemProps) {
                 <span className="text-xs text-[#949ba4]">
                   {formatDistanceToNow(new Date(message.createdAt), { addSuffix: true })}
                 </span>
+                {isSending && <span className="text-xs text-[#f0b232]">Sending...</span>}
                 {message.edited && (
                   <span className="text-xs text-[#949ba4]">(edited)</span>
                 )}
@@ -177,22 +196,59 @@ export function MessageItem({ message }: MessageItemProps) {
               {message.attachments && message.attachments.length > 0 && (
                 <div className="mt-2 space-y-2">
                   {message.attachments.map((attachment) => (
-                    <button
-                      type="button"
-                      key={attachment.id}
-                      onClick={() => handleAttachmentDownload(attachment.id)}
-                      className="flex max-w-[380px] items-center gap-3 rounded-lg border border-[#1e1f22] bg-[#1f2024] px-3 py-2 transition-colors hover:border-[#5865f2]/60"
-                    >
-                      <div className="flex h-9 w-9 items-center justify-center rounded-md bg-[#2b2d31] text-[#b5bac1]">
-                        <FileText className="h-5 w-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-[#dbdee1] truncate">
-                          {attachment.fileName}
-                        </p>
-                        <p className="text-xs text-[#949ba4]">Attachment</p>
-                      </div>
-                    </button>
+                    attachment.mimeType?.startsWith("image/") ? (
+                      <button
+                        type="button"
+                        key={attachment.id}
+                        onClick={() =>
+                          handleAttachmentClick(
+                            attachment.id,
+                            attachment.fileUrl,
+                            attachment.isLocalPreview
+                          )
+                        }
+                        className="block max-w-[380px] overflow-hidden rounded-lg border border-[#1e1f22] bg-[#1f2024] transition-colors hover:border-[#5865f2]/60 text-left"
+                      >
+                        <img
+                          src={attachment.fileUrl}
+                          alt={attachment.fileName}
+                          className="max-h-[220px] w-full object-cover"
+                        />
+                        <div className="px-3 py-2">
+                          <p className="text-sm font-medium text-[#dbdee1] truncate">
+                            {attachment.fileName}
+                          </p>
+                          <p className="text-xs text-[#949ba4]">
+                            {attachment.isLocalPreview ? "Uploading image..." : "Image attachment"}
+                          </p>
+                        </div>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        key={attachment.id}
+                        onClick={() =>
+                          handleAttachmentClick(
+                            attachment.id,
+                            attachment.fileUrl,
+                            attachment.isLocalPreview
+                          )
+                        }
+                        className="flex max-w-[380px] items-center gap-3 rounded-lg border border-[#1e1f22] bg-[#1f2024] px-3 py-2 transition-colors hover:border-[#5865f2]/60"
+                      >
+                        <div className="flex h-9 w-9 items-center justify-center rounded-md bg-[#2b2d31] text-[#b5bac1]">
+                          <FileText className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-[#dbdee1] truncate">
+                            {attachment.fileName}
+                          </p>
+                          <p className="text-xs text-[#949ba4]">
+                            {attachment.isLocalPreview ? "Uploading attachment..." : "Attachment"}
+                          </p>
+                        </div>
+                      </button>
+                    )
                   ))}
                 </div>
               )}
@@ -247,7 +303,7 @@ export function MessageItem({ message }: MessageItemProps) {
 
           {/* Hover Actions */}
           <AnimatePresence>
-            {isHovered && (
+            {!isSending && isHovered && (
               <motion.div
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -325,7 +381,7 @@ export function MessageItem({ message }: MessageItemProps) {
 
       {/* Context Menu */}
       <ContextMenuContent className="bg-[#111827] border-[#1e1f22] text-[#b5bac1]">
-        {isAuthor && (
+        {!isSending && isAuthor && (
           <ContextMenuItem
             onClick={() => setIsEditing(true)}
             className="focus:bg-[#4e5058] focus:text-white"
@@ -334,14 +390,16 @@ export function MessageItem({ message }: MessageItemProps) {
             Edit Message
           </ContextMenuItem>
         )}
-        <ContextMenuItem
-          onClick={handlePin}
-          className="focus:bg-[#4e5058] focus:text-white"
-        >
-          <Pin className="w-4 h-4 mr-2" />
-          {message.pinned ? "Unpin" : "Pin"} Message
-        </ContextMenuItem>
-        {isAuthor && (
+        {!isSending && (
+          <ContextMenuItem
+            onClick={handlePin}
+            className="focus:bg-[#4e5058] focus:text-white"
+          >
+            <Pin className="w-4 h-4 mr-2" />
+            {message.pinned ? "Unpin" : "Pin"} Message
+          </ContextMenuItem>
+        )}
+        {!isSending && isAuthor && (
           <>
             <ContextMenuSeparator className="bg-[#3f4147]" />
             <ContextMenuItem
@@ -352,6 +410,14 @@ export function MessageItem({ message }: MessageItemProps) {
               Delete Message
             </ContextMenuItem>
           </>
+        )}
+        {isSending && (
+          <ContextMenuItem
+            disabled
+            className="focus:bg-transparent focus:text-[#949ba4] text-[#949ba4]"
+          >
+            Sending message...
+          </ContextMenuItem>
         )}
       </ContextMenuContent>
 
