@@ -193,8 +193,8 @@ ORDER BY recent.created_at ASC;
 
   // print author id)
 
-  console.log("QUERY:", query);
-  console.log("VALUES:", values);
+  // console.log("QUERY:", query);
+  // console.log("VALUES:", values);
 
   return pool.query(query, values);
 };
