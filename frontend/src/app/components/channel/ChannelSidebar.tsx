@@ -1,15 +1,8 @@
 import { useParams, useNavigate } from "react-router";
 import { useApp } from "../../contexts/AppContext";
 import { useAuth } from "../../contexts/AuthContext";
-import { Hash, Settings, LogOut } from "lucide-react";
+import { Hash, LogOut } from "lucide-react";
 import { motion } from "motion/react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "../ui/dropdown-menu";
 
 export function ChannelSidebar() {
   const { serverId, channelId } = useParams();
@@ -82,25 +75,15 @@ export function ChannelSidebar() {
           <div className="text-sm text-white font-medium truncate">{user?.displayName}</div>
           <div className="text-xs text-[#949ba4]">Online</div>
         </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger className="p-1.5 hover:bg-[#35363c] rounded text-[#b5bac1] hover:text-[#dbdee1] focus:outline-none transition-colors">
-            <Settings className="w-4 h-4" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-48 bg-[#111827] border-[#1e1f22] mb-2 text-[#b5bac1]">
-            <DropdownMenuItem className="focus:bg-[#4e5058] focus:text-white">
-              <Settings className="w-4 h-4 mr-2" />
-              Settings
-            </DropdownMenuItem>
-            <DropdownMenuSeparator className="bg-[#3f4147]" />
-            <DropdownMenuItem
-              onClick={handleLogout}
-              className="text-[#f23f42] focus:text-[#f23f42] focus:bg-[#f23f42]/10"
-            >
-              <LogOut className="w-4 h-4 mr-2" />
-              Log Out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="p-1.5 hover:bg-[#35363c] rounded text-[#b5bac1] hover:text-[#f23f42] focus:outline-none transition-colors"
+          aria-label="Log Out"
+          title="Log Out"
+        >
+          <LogOut className="w-4 h-4" />
+        </button>
       </div>
     </div>
   );
