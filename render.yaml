@@ -11,16 +11,21 @@ services:
         value: https://discord-frontend-jf6r.onrender.com
       - key: DATABASE_URL
         value: <supabase-url>
+        sync: false
       - key: JWT_SECRET
         value: <jwt-secret>
+        sync: false
       - key: JWT_EXPIRES_IN
         value: 7d
       - key: SUPABASE_URL
         value: <supabase-url>
+        sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         value: <supabase-service-role-key>
+        sync: false
       - key: SUPABASE_STORAGE_BUCKET
         value: <supabase-bucket>
+        sync: false
 
   - type: web
     name: discord-frontend
@@ -30,5 +35,7 @@ services:
     envVars:
       - key: VITE_API_BASE_URL
         value: https://discord-backend-rweo.onrender.com/api/v1
+        sync: false
       - key: VITE_SOCKET_URL
         value: https://discord-backend-rweo.onrender.com
+        sync: false
