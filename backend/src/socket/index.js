@@ -63,22 +63,22 @@ const initSocket = (server) => {
 
   // ── Connection ───────────────────────────────────────────────
   io.on('connection', (socket) => {
-    console.log(`[WS] Connected: ${socket.user.username} (${socket.id})`);
+    // console.log(`[WS] Connected: ${socket.user.username} (${socket.id})`);
 
     // Client must emit channel:join after connecting to receive channel events.
     // Room name pattern: "channel:<channelId>"
     socket.on('channel:join', (channelId) => {
       socket.join(`channel:${channelId}`);
-      console.log(`[WS] ${socket.user.username} joined channel:${channelId}`);
+      // console.log(`[WS] ${socket.user.username} joined channel:${channelId}`);
     });
 
     socket.on('channel:leave', (channelId) => {
       socket.leave(`channel:${channelId}`);
-      console.log(`[WS] ${socket.user.username} left channel:${channelId}`);
+      // console.log(`[WS] ${socket.user.username} left channel:${channelId}`);
     });
 
     socket.on('disconnect', (reason) => {
-      console.log(`[WS] Disconnected: ${socket.user.username} — ${reason}`);
+      // console.log(`[WS] Disconnected: ${socket.user.username} — ${reason}`);
     });
   });
 
